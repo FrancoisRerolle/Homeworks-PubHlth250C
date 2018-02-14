@@ -1,3 +1,3 @@
 # Homeworks-PubHlth250C
 
-hiasdlknfelnfea
+This github repositery produces team UCSF to produce awesome HW for PubHlth250C
