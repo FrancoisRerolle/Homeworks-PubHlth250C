@@ -42,7 +42,7 @@ propOutcome <- table(frmgham_recoded.wide$hyperten)/sum(table(frmgham_recoded.wi
 frmgham_recoded.wide$bmi_cat <- relevel(as.factor(frmgham_recoded.wide$bmi_cat),"2")
 
 # Estimate logistic regression:
-logistic.frmgham <- glm(hyperten ~ factor(bmi_cat) + cursmoke + age + factor(sex) + factor(educ),
+logistic.frmghflkdsjaf;sdfam <- glm(hyperten ~ factor(bmi_cat) + cursmoke + age + factor(sex) + factor(educ),
                         data=frmgham_recoded.wide,
                         family=binomial)
 summary(logistic.frmgham)
