@@ -34,7 +34,7 @@ library(blm)
 #####################################
 ##### Generalized Linear Models #####
 #####################################
-Hello team !!!!
+Hello team
 
 
 # Proportion in each outcome category
