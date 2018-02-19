@@ -1,0 +1,235 @@
+\documentclass{article}
+\title{PubHlth 250 C \\ HW 2} 
+\author{Team UCSF: Kristina Dang - Amanda Irish - Francois Rerolle}
+\date{\today}
+
+%List if latex packages you'll need
+\usepackage{float}
+\usepackage{mathtools}
+\usepackage{array}
+\usepackage{booktabs}
+
+%set the margins of the document
+\usepackage[]{geometry}
+
+%End the preamble and begin the document
+\begin{document}
+\maketitle
+ 
+<<include=FALSE, cache=TRUE>>=
+# Preliminaries in R
+# Clear the R environment of variables, set the working directory, and then load necessary R packages
+rm(list=ls())
+setwd("/Users/francoisrerolle/Desktop/UCSF/Courses/Winter 2018/PubHlth 250 C/HW/HW2")
+#Load data
+load("frmgham_recoded.Rdata")
+
+# Load required packages:
+library(survival)
+# library(geepack)
+# library(doBy)
+# library(stats4) # needed for MLE function
+# library(blm)
+
+
+#CREATE A SINGLE-RECORD DATASET (retain 1st observation)
+frmgham_recoded <- frmgham_recoded[which(frmgham_recoded$period == 1),]
+
+# Check out first few observations for a few variables
+vars <- c("randid","time_yrs","timedth_yrs","death","cursmoke", "age","sex", "educ")
+head(frmgham_recoded[,vars])
+
+# Check out last few observations:
+tail(frmgham_recoded[,vars])
+
+# WE CAN USE THE SURVIVAL PACKAGE TO CREATE KAPLAN-MEIER TABLES AND SURVIVAL SUNCTIONS
+#### FOR THE KM SURVIVAL FUNCTION
+survmod1 <- survfit(Surv(time_yrs,timedth_yrs, death)~1, data=frmgham_recoded)
+
+# Kaplan-Meier table
+survmod1.summary <- summary(survmod1); 
+keep.cols <- c("time","n.risk","n.event","surv","std.err","lower","upper")
+KMtable <- sapply(survmod1.summary[keep.cols],cbind) # Picks off the columns we want
+round(KMtable[1:10,],digits = 4) # Shows 1st 10 rows (and all columns) of KM table
+
+# GRAPH THE KM SURVIVAL FUNCTION
+#     SEE DOCUMENTATION FOR plot() FUNCTION FOR OPTIONS (LINE TYPES, ETC...)
+pdf("KMSurvivalCurve.pdf") # Saves to PDF file
+plot(survmod1, main="Kaplan-Meier Survival Estimates", 
+             xlab="Time (years)", ylab="Survival Probability",
+     xlim=c(0,25), bty="l")
+dev.off()
+
+# Quantiles of Failure Time:
+round(KMtable[which(KMtable[,"surv"] <=0.75),][1,],2)
+#KMtable[which(KMtable[,"surv"] <=0.50),][1,] # R no likey: there is no 50th percentile.
+#KMtable[which(KMtable[,"surv"] <=0.25),][1,] # Similarly no 25th percentile.
+
+tail(KMtable) # Lowest survival probability=0.65
+
+####BY SMOKING CATEGORY
+survmod2 <- survfit(Surv(time_yrs,timedth_yrs, death) ~ cursmoke, data=frmgham_recoded)
+
+pdf("KMSurvivalCurveSMOKE.pdf") # Saves to PDF file
+plot(survmod2,
+     main="Kaplan-Meier Survival Estimates by smoking category",
+     xlab="Time",
+     ylab="Survival Probability",
+     xlim=c(0,25),
+     bty="l",
+     col=c("darkblue","darkorange"),
+     conf.int = "both")
+
+legend("bottomright",
+       legend=c("Non Smokers","Smokers"),
+       lty=1,
+       lwd=2,
+       col=c("darkblue","darkorange"),
+       cex=0.8,
+       bty="n")
+dev.off()
+
+
+# The "scale" option set to 1 tells pyears() that the time is already in yrs
+# (default is to divide time by 365.25)
+py.smoke <- pyears(Surv(timedth_yrs,death)~cursmoke, frmgham_recoded, scale=1)[c("event","pyears")]
+simplify2array(py.smoke) # Make it pretty
+
+#LOGRANK TEST 
+survdiff(Surv(timedth_yrs, death) ~ cursmoke, data=frmgham_recoded)
+@
+
+<<include=FALSE, cache=TRUE>>=
+###########CONTINUOUS TIME SURVIVAL##############
+# Unadjusted Cox Proportional Hazards model for smoking category:
+survmod.cox_unadj <- coxph(Surv(time_yrs,timedth_yrs, death)
+                           ~ as.factor(cursmoke),
+                           data=frmgham_recoded,
+                           method="efron")
+summary(survmod.cox_unadj)
+
+# Fully-adjusted Cox Proportional Hazards model for smoking category:
+survmod.cox_adj <- coxph(Surv(time_yrs,timedth_yrs, death)
+                           ~ as.factor(cursmoke) + age + sex + as.factor(educ), 
+                         data=frmgham_recoded,
+                         method="efron")
+summary(survmod.cox_adj)
+
+@
+
+\section{\small{Question: \textit{Using the Kaplan-Meier plots, graphically assess the relationship between baseline smoking status and time to death. Briefly interpret what you see. In 1-2 sentences describe the limitations of this approach. [include graph, labeled Figure 1] (10 points)}}} 
+
+Figure \ref{fig:one} below shows the Kaplan-Meier empirical survival plots by baseline smoking category. As we can see, it looks like the survival function for smokers, in orange, decreases faster than for non smokers, in blue. Graphically, we would say that smokers have an increased risk of death compared to non smokers in this dataset. Yet, given the overlap of the 95 $\%$ confidence intervals, it is unlikely that this observed difference is statistically significant.\\\\
+Plotting the Kaplan-Meier survival curves for each level of categorical variables is a simple way to assess if such covariate is associated with survival but this approach is limited as it becomes very cumbersome with multiple categorical variables and is not an option for continuous variables. In addition, this Kaplan-Meier approach does not give an estimate of the magnitude of the effect of a covariate on survival and a subjective assessment is required to determine whether or not the survival curves are equivalent between two groups.
+
+\begin{figure}
+\begin{center}
+<<label=fig1, tidy=TRUE, echo = FALSE, results ='asis', message=FALSE, cache = TRUE>>=
+plot(survmod2,
+     main="Kaplan-Meier Survival Estimates by smoking category",
+     xlab="Time (years)",
+     ylab="Survival Probability",
+     xlim=c(0,25),
+     bty="l",
+     col=c("darkblue","darkorange"),
+     conf.int = "both")
+
+legend("bottomright",
+       legend=c("Non Smokers","Smokers"),
+       lty=1,
+       lwd=2,
+       col=c("darkblue","darkorange"),
+       cex=0.8,
+       bty="n")
+@
+\end{center}
+\caption{Kaplan-Meier Survival Estimates by smoking category}
+\label{fig:one}
+\end{figure}
+
+\begin{figure}
+\begin{center}
+<<label=fig2, tidy=TRUE, echo = FALSE, results ='asis', message=FALSE, cache = TRUE>>=
+plot(survmod1,
+     main="Overall Kaplan-Meier Survival Estimates",
+     xlab="Time (years)",
+     ylab="Survival Probability",
+     xlim=c(0,25), bty="l")
+@
+\end{center}
+\caption{Overall Kaplan-Meier Survival}
+\label{fig:two}
+\end{figure}
+
+\section{\small{Question: \textit{Referring to the code from lecture, are you able to calculate the overall median survival time in this case? If so, provide an estimate of this quantity, if not, describe why and provide an estimate of the 75th percentile of survival time. Interpret the quantity that you estimated. (15 points)}}} 
+
+Figure \ref{fig:two} shows the overall Kaplan-Meier survival curve. As we can see, we can't estimate the overall median survival time in this case as less than $50\%$ of the individuals in the sample died by the end of the follow-up. Actually, at the end of the follow-up, survival was still above $65\%$.\\\\
+On the other hand, the overall 75th percentile of survival time can be calculated and is equal to \(\Sexpr{round(KMtable[which(KMtable[,"surv"] <=0.75),][1,1],2)}\) years. That means that by year \(\Sexpr{round(KMtable[which(KMtable[,"surv"] <=0.75),][1,1],2)}\), at least $25\%$ of the individuals in the sample had died.
+
+<<>>=
+round(KMtable[which(KMtable[,"surv"] <=0.75),][1,],2)
+@
+
+
+\newpage
+
+\section{\small{Question: \textit{Answer the following questions about the log-rank test: (10 points total)}}} 
+
+\subsection{\small{\textit{Describe the specific hypothesis that the logrank test is considering here.}}} 
+
+Here, we are comparing the survival curves between two groups, baseline smokers and baseline non smokers. The logrank test tests the null hypothesis that the two survival functions are equivalent at all time:
+\begin{eqnarray*}
+H_{0}: \forall t > 0, S_{smokers}(t)=S_{non-smokers}(t)
+\label{eq:nullHypothesisLogRank}
+\end{eqnarray*}
+where $S_{smokers}(t)$ and $S_{non-smokers}(t)$ are the survival functions of baseline smokers and non-smokers respectively. The alternative hypothesis for the logrank test is that the two survival functions differ in at least one time point: 
+\begin{eqnarray*}
+H_{A}:  S_{smokers}(t)\neq S_{non-smokers}(t), \mbox{ for some t}
+\label{eq:alternativeHypothesisLogRank}
+\end{eqnarray*}
+
+\subsection{\small{\textit{What do you conclude from this test (use $5\%$ significance criteria)? What is the limitation of the inference that you obtain from the log-rank test?}}} 
+The result from the logrank test is given below. At the $5\%$ significance level, the test is not significant and fails to reject the null hypothesis that the two survival functions are equivalent. We therefore conclude that the data does not provide evidence for different survival functions between baseline smokers and non-smokers.\\\\
+One big limitation of the inferences obtained from logrank tests is that it is limited to categorical variable comparisons and for multiple stratum comparisons, the statistically significant logrank test will only indicate that at least two of the stratum specific survival functions are not equivalent but will not indicate which ones. In addition, the logrank test does not give any information about the magnitude of the difference between two survival curves.
+<<>>=
+library(survival)
+#LOGRANK TEST 
+survdiff(Surv(timedth_yrs, death) ~ cursmoke, data=frmgham_recoded)
+@
+
+\newpage
+
+\section{\small{Question: \textit{Answer the following questions about the Cox models estimated above: (20 points total)}}} 
+
+\subsection{\small{\textit{Why do we use specialized methods for survival analysis (instead of linear or logistic regression, for example)?}}} 
+
+In survival analysis, the outcome of interest in no longer a simple prevalence or incidence but a time to event variable and follow-up across participants is not necessarily equal. Because of right censoring, time to event variales cannot be treated as a continuous and simply applying logistic regression to the binary indicator of mortality (failure more generally) would ignore the broad variation between patients in length of follow-up. According to the Vittinghoff text, ``regression adjustement for duration of follow-up would adress this partially but impose unnecessary assumptions about the relationship between event risk and duration''.
+
+\subsection{\small{\textit{What are the advantages of the Cox model over other survival analysis methods? What is a potential disadvantage of the Cox model?}}} 
+
+The main advantage of the Cox model over other survival analysis methods is that it does not impose any assumptions on the ``baseline'' hazard (referent hazard) allowing very flexible models. That is why it is called a semi-parametric model. On the other hand, correctly specifying the distribution of the baseline hazard could yield a more efficient estimator. Sir Cox himself would have rather used a parametric model over his own Cox model.
+
+\subsection{\small{\textit{What assumptions, if any, does the standard Cox proportional hazards model make?}}} 
+
+As any proportional hazards model, the Cox model assumes constant hazard ratio over time. The Cox model also assumes a linear relationship between the log of the hazard rate and the covariates in the model.
+
+\subsection{\small{\textit{Compare the test of the smoking-mortality association between the log-rank test and the Cox proportional hazards model. What do you observe? Between these two, which one would you
+prefer, and why?}}} 
+
+The p-value for the smoking-mortality association in the unadjusted Cox proportional hazards model (see below) is $0.088$ which is really similar to the p-value obtained for the logrank test in question 3, both failing to reject the null hypothesis of no effect of baseline smoking status.\\\\
+On the other hand, in the adjusted Cox model, the test of the smoking-mortality association is now significant (p-value = $4.23e^{-10}$) indicative of a non-null effect of baseline smoking on survival.\\\\
+As previously discussed, the logrank test is not flexible enough to account for many variable, especially coninuous variables. Our conceptualization of the research question led us to draw a DAG where age, sex and education were potential confounders and we need to adjust for them if we want to retrieve the conditional effect of smoking on survival. I would therefore prefer to use the Cox model over the logrank test.\\\\
+
+<<size="footnotesize">>=
+summary(survmod.cox_unadj)
+
+summary(survmod.cox_adj)
+@
+
+
+
+<<echo=FALSE>>=
+setwd("/Users/francoisrerolle/Desktop/UCSF/Courses/Winter 2018/PubHlth 250 C/HW/HW2")
+@
+
+\end{document}
