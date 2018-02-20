@@ -15,21 +15,23 @@
 %End the preamble and begin the document
 \begin{document}
 \maketitle
+
+<<include=FALSE>>=
+rm(list=ls())
+options(scipen=999, digits = 2)
+
+# Load required packages:
+library(survival)
+@
+
  
 <<include=FALSE, cache=TRUE>>=
 # Preliminaries in R
 # Clear the R environment of variables, set the working directory, and then load necessary R packages
-rm(list=ls())
 setwd("/Users/francoisrerolle/Desktop/UCSF/Courses/Winter 2018/PubHlth 250 C/HW/HW2")
+
 #Load data
 load("frmgham_recoded.Rdata")
-
-# Load required packages:
-library(survival)
-# library(geepack)
-# library(doBy)
-# library(stats4) # needed for MLE function
-# library(blm)
 
 
 #CREATE A SINGLE-RECORD DATASET (retain 1st observation)
@@ -107,6 +109,10 @@ survmod.cox_unadj <- coxph(Surv(time_yrs,timedth_yrs, death)
                            data=frmgham_recoded,
                            method="efron")
 summary(survmod.cox_unadj)
+hr.crude <- exp(cbind(coef(survmod.cox_unadj), confint(survmod.cox_unadj)))
+colnames(hr.crude) <- c("HR","95% LL","95% UL")
+hr.crude.expci <- round(hr.crude,digits=4) # Estimated HRs from interval-censored data
+# hr.crude.expci[6:7,]
 
 # Fully-adjusted Cox Proportional Hazards model for smoking category:
 survmod.cox_adj <- coxph(Surv(time_yrs,timedth_yrs, death)
@@ -114,6 +120,25 @@ survmod.cox_adj <- coxph(Surv(time_yrs,timedth_yrs, death)
                          data=frmgham_recoded,
                          method="efron")
 summary(survmod.cox_adj)
+hr.adj <- exp(cbind(coef(survmod.cox_adj), confint(survmod.cox_adj)))
+colnames(hr.adj) <- c("HR","95% LL","95% UL")
+hr.adj.expci <- round(hr.adj,digits=4) # Estimated HRs from interval-censored data
+hr.adj.expci[1,]
+
+# Time-covariate interaction:
+#Need to create dummies for education
+frmgham_recoded$educ1 <- as.numeric(frmgham_recoded$educ[]==1) 
+frmgham_recoded$educ2 <- as.numeric(frmgham_recoded$educ[]==2) 
+frmgham_recoded$educ3 <- as.numeric(frmgham_recoded$educ[]==3) 
+frmgham_recoded$educ4 <- as.numeric(frmgham_recoded$educ[]==4) 
+
+survmod.cox_ixn <- coxph(Surv(time_yrs,timedth_yrs, death) ~
+                           cursmoke + age + sex + educ2 + educ3 + educ4 + 
+                           tt(cursmoke) + tt(age) + tt(sex) + tt(educ2) + tt(educ3) + tt(educ4),
+                         data=frmgham_recoded,
+                         method="efron",
+                         tt=function(x,t,...) x*t)
+summary(survmod.cox_ixn)
 
 @
 
@@ -192,7 +217,6 @@ H_{A}:  S_{smokers}(t)\neq S_{non-smokers}(t), \mbox{ for some t}
 The result from the logrank test is given below. At the $5\%$ significance level, the test is not significant and fails to reject the null hypothesis that the two survival functions are equivalent. We therefore conclude that the data does not provide evidence for different survival functions between baseline smokers and non-smokers.\\\\
 One big limitation of the inferences obtained from logrank tests is that it is limited to categorical variable comparisons and for multiple stratum comparisons, the statistically significant logrank test will only indicate that at least two of the stratum specific survival functions are not equivalent but will not indicate which ones. In addition, the logrank test does not give any information about the magnitude of the difference between two survival curves.
 <<>>=
-library(survival)
 #LOGRANK TEST 
 survdiff(Surv(timedth_yrs, death) ~ cursmoke, data=frmgham_recoded)
 @
@@ -220,13 +244,77 @@ The p-value for the smoking-mortality association in the unadjusted Cox proporti
 On the other hand, in the adjusted Cox model, the test of the smoking-mortality association is now significant (p-value = $4.23e^{-10}$) indicative of a non-null effect of baseline smoking on survival.\\\\
 As previously discussed, the logrank test is not flexible enough to account for many variable, especially coninuous variables. Our conceptualization of the research question led us to draw a DAG where age, sex and education were potential confounders and we need to adjust for them if we want to retrieve the conditional effect of smoking on survival. I would therefore prefer to use the Cox model over the logrank test.\\\\
 
-<<size="footnotesize">>=
+<<size="scriptsize">>=
 summary(survmod.cox_unadj)
 
 summary(survmod.cox_adj)
 @
 
+\section{\small{Question: \textit{Write the equation for the log-hazard function for the adjusted model you estimated in terms of the variables in the dataset. Clearly define all parameters in the model. (15 points)}}} 
 
+The equation for the log-hazard function for the adjusted model is given by:
+
+\begin{eqnarray*}
+ln(h(t|x)) = ln(h_{0}(t)) + \beta_{smoke} * cursmoke + \beta_{sex} * sex + \beta_{age} * age\\ + \beta_{educ,2} * educ_{2} + \beta_{educ,3} * educ_{3} + \beta_{educ,4} * educ_{4}
+\label{eq:alogHazardFunctionAdjusted}
+\end{eqnarray*}
+where $h(t)$ is the hazard function, $h_{0}(t)$ is the baseline hazard (non specificied in the Cox model), $cursmoke$ is a binary indicator equals to 1 or 0 for baseline smokers and non smokers respectively, $sex$ is a binary indicator equals to 1 or 0 for female and male respectively, $age$ is a continuous variable for age (in years) and $educ_{j}$ is a dummy variable equal to 1 for individuals with a categorized education level in the $j^{th}$ category (1 as referent category). The coefficients of the models, $\beta_{i}$, are the log hazard ratio for a 1 unit increase in the covariate $i$. We will show that specifically for the $cursmoke$ variable in question 6.
+
+\section{\small{Question: \textit{Using the above, show that the hazard ratio comparing current smokers to non-smokers, holding all other covariates constant, is exp($\beta_{1}$) where $\beta_{1}$ is the coefficient on the smoking indicator. (Hint: Start by showing the log-hazard for smokers and the log-hazard for non-smokers and use the fact that the log of the hazard ratio is the difference between two log-hazards.) (10 points)}}} 
+
+The log of the hazard ($h_{s}(t)$) for smokers ($cursmoke$ = 1) is given by:
+
+\begin{eqnarray*}
+ln(h_{s}(t|x)) = ln(h_{0}(t)) + \beta_{smoke} + \beta_{sex} * sex + \beta_{age} * age\\ + \beta_{educ,2} * educ_{2} + \beta_{educ,3} * educ_{3} + \beta_{educ,4} * educ_{4}
+\label{eq:logHazardFunctionAdjustedSmokers}
+\end{eqnarray*}
+The log of the hazard ($h_{ns}(t)$) for non smokers ($cursmoke$ = 0) is given by:
+
+\begin{eqnarray*}
+ln(h_{ns}(t|x)) = ln(h_{0}(t)) + \beta_{sex} * sex + \beta_{age} * age\\ + \beta_{educ,2} * educ_{2} + \beta_{educ,3} * educ_{3} + \beta_{educ,4} * educ_{4}
+\label{eq:logHazardFunctionAdjustedNonSmokers}
+\end{eqnarray*}
+Therefore, taking the difference of the two equations, holding all other covariates constant, we have:
+
+\begin{eqnarray*}
+ln(h_{s}(t|x)) - ln(h_{ns}(t|x)) = ln(\dfrac{h_{s}(t|x)}{h_{ns}(t|x)}) = \beta_{smoke}
+\label{eq:logHazardRatioSmoking}
+\end{eqnarray*}
+Noting $\beta_{smoke}=\beta_{1}$ the coefficient for smoking and $HR_{smoking} = \dfrac{h_{s}(t|x)}{h_{ns}(t|x)}$, the hazard ratio comparing current smokers to non-smokers, we have:
+
+\begin{eqnarray*}
+HR_{smoking} = \dfrac{h_{s}(t|x)}{h_{ns}(t|x)} = exp(\beta_{1})
+\label{eq:HazardRatioSmoking}
+\end{eqnarray*}
+QED.
+
+\section{\small{Question: \textit{Complete the following table. How would you interpret the parameter estimate that compares smokers to non-smokers in the adjusted model? What measure of association common in epidemiologic research does this correspond to? (10 points)}}} 
+
+\begin{table}[htp]
+\begin{center}
+\begin{tabular}{lcccc}
+\hline
+ Smoker & Events & Follow-up Time (Person-years) & Crude HR (95$\%$ CI) & Adj HR (95$\%$ CI) \\ \hline
+No &  \(\Sexpr{simplify2array(py.smoke)[1,1]}\) & \(\Sexpr{simplify2array(py.smoke)[1,2]}\) & . & . \\
+Yes & \(\Sexpr{simplify2array(py.smoke)[2,1]}\) & \(\Sexpr{simplify2array(py.smoke)[2,2]}\) & \(\Sexpr{hr.crude.expci[1]}\) (\(\Sexpr{hr.crude.expci[2]}\) ; \(\Sexpr{hr.crude.expci[3]}\)) & \(\Sexpr{hr.adj.expci[1,1]}\) (\(\Sexpr{hr.adj.expci[1,2]}\) ; \(\Sexpr{hr.adj.expci[1,3]}\)) \\ \hline
+\end{tabular}
+\caption{Crude and adjusted hazard ratio (HR) estimates of the association between baseline smoking status and mortality. Framingham Cohort Study. 1948-1972, Framingham, MA.}
+\label{table:table1}
+\end{center}
+\end{table}
+
+\noindent After adjusting for sex, age and education level, smokers have \(\Sexpr{hr.adj.expci[1,1]}\) (95 $\%$ CI: \(\Sexpr{hr.adj.expci[1,2]}\) ; \(\Sexpr{hr.adj.expci[1,3]}\)) times the hazard of dying than non smokers. The hazard ratios correspond to instantaneous incidence rate ratio, a common measure of association in epidemiologic research. They relate to risk, although as the Vittinghoff textbook puts it: ``it is important to keep in mind the definition of the hazard as a short-term rate and distinguish risk in this sense from cumulative risk over a defined follow-up period''.
+
+\section{\small{Question: \textit{Is there evidence for a violation of the proportional hazards assumption in any of the variables? Indicate how you arrived at your conclusion. Describe how you would account for any noted violations in the proportional hazards assumption. (10 points)}}} 
+
+To assess any violation for the proportional hazards assumptions, we have fitted a Cox model with interaction terms between each of the covariates (dummy variables for $educ$ were previously created) and a linear follow-up time. A non null interaction coefficient would suggest that the effect of the corresponding covariate is not constant over time, hence violating the PH assumption. As we can see on the output below, only the interaction coefficient with $sex$ reached statistical significance indicating violation of the PH assumption that there is a constant hazard ratio over time for $sex$. There is no evidence to reject the PH assumptions for all the other covariates nor the exposure of interest $cursmoke$.\\\\
+To account for such violation in the proportional hazards assumption, we could include the time interaction with $sex$ in the final model or, since $sex$ is categorical, we could estimate a stratified Cox proportional hazards model, basically allowing the baseline hazard $h_{0}(t)$ to differ between males and females.
+
+\newpage 
+
+<<cache=TRUE>>=
+summary(survmod.cox_ixn)
+@
 
 <<echo=FALSE>>=
 setwd("/Users/francoisrerolle/Desktop/UCSF/Courses/Winter 2018/PubHlth 250 C/HW/HW2")
