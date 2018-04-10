@@ -1,0 +1,243 @@
+\documentclass{article}
+\title{PubHlth 250 C \\ HW 3} 
+\author{Team UCSF: Kristina Dang - Amanda Irish - Francois Rerolle}
+\date{\today}
+
+%List if latex packages you'll need
+\usepackage{float}
+\usepackage{mathtools}
+\usepackage{array}
+\usepackage{booktabs}
+
+%set the margins of the document
+\usepackage[]{geometry}
+
+%End the preamble and begin the document
+\begin{document}
+\maketitle
+
+<<include=FALSE>>=
+rm(list=ls())
+options(scipen=999, digits = 2)
+
+# Load required packages:
+require(survival)
+require(multcomp)
+require(lmtest)
+require(car)
+
+@
+
+ 
+<<include=FALSE, cache=TRUE>>=
+# Preliminaries in R
+# Clear the R environment of variables, set the working directory, and then load necessary R packages
+setwd("/Users/francoisrerolle/Desktop/UCSF/Courses/Winter 2018/PubHlth 250 C/HW/HW3")
+
+#Load data
+load("framingham_hw3.RData")
+
+# Code restrcied quadratic splines with boundaries: <20 cigarettes/day; 20 - <40 cigarettes/day; 40 - <60 cigarettes/day; >= 60 cigarettes/day
+
+finaldata.stroke$s20 <- ifelse(finaldata.stroke$cigpday > 20, finaldata.stroke$cigpday-20, 0)
+finaldata.stroke$s40 <- ifelse(finaldata.stroke$cigpday > 40, finaldata.stroke$cigpday-40, 0)
+finaldata.stroke$s60 <- ifelse(finaldata.stroke$cigpday > 60, finaldata.stroke$cigpday-60, 0)
+
+# strkCIGPDAYls.coxph <- coxph(Surv(timestrk, stroke) ~ cigpday + s20 + s40 + s60,
+#                               data=finaldata.stroke,
+#                               ties="efron")
+# 
+# summary(strkCIGPDAYls.coxph)
+# 
+# plot(finaldata.stroke$cigpday, predict(strkCIGPDAYls.coxph, type="risk"), main=expression(paste("Linear Spline Cigpday vs. Stroke")),xlab="Cigpday", ylab=expression(paste("Estimated exp(X*",beta,") [centered linear predictor]")))
+
+finaldata.stroke$s20.2 <- finaldata.stroke$s20^2
+finaldata.stroke$s40.2 <- finaldata.stroke$s40^2
+finaldata.stroke$s60.2 <- finaldata.stroke$s60^2
+
+finaldata.stroke$cigpday2 <- finaldata.stroke$cigpday^2
+
+# strkCIGPDAYqs.coxph <- coxph(Surv(timestrk, stroke) ~ cigpday + cigpday2 + s20.2 + s40.2 + s60.2,
+#                               data=finaldata.stroke,
+#                               ties="efron")
+# 
+# summary(strkCIGPDAYqs.coxph)
+# 
+# plot(finaldata.stroke$cigpday, predict(strkCIGPDAYqs.coxph, type="risk"), main=expression(paste("Quadratic Spline Cigpday vs. Stroke")),xlab="Cigpday", ylab=expression(paste("Estimated exp(X*",beta,") [centered linear predictor]")))
+
+finaldata.stroke$rqs20 <- finaldata.stroke$s20.2 - finaldata.stroke$s60.2
+finaldata.stroke$rqs40 <- finaldata.stroke$s40.2 - finaldata.stroke$s60.2
+
+strkCIGPDAYrqs.coxph <- coxph(Surv(timestrk, stroke) ~ cigpday + rqs20 + rqs40,
+                              data=finaldata.stroke,
+                              ties="efron")
+
+summary(strkCIGPDAYrqs.coxph)
+
+plot(finaldata.stroke$cigpday, predict(strkCIGPDAYrqs.coxph, type="risk"), main=expression(paste("Restricted Quadratic Spline Cigpday vs. Stroke")),xlab="Cigpday", ylab=expression(paste("Estimated exp(X*",beta,") [centered linear predictor]")))
+
+
+### Cox models
+# Model 1 with cigpday as linear
+stroke.linear <- coxph(Surv(timestrk, stroke) ~ cigpday + age,
+                       data=finaldata.stroke,
+                       ties="efron")
+
+summary(stroke.linear)
+
+# Model 2 with cigpday as restricted quadratic splines
+stroke.rqs <- coxph(Surv(timestrk, stroke) ~ age + cigpday +  rqs20 + rqs40,
+                    data=finaldata.stroke,
+                    ties="efron")
+
+summary(stroke.rqs)
+
+# Create a new dataset where age is fixed to its median value:
+# (will use this for calculating predicted values)
+finaldata.stroke.new <- finaldata.stroke
+finaldata.stroke.new$age <- median(finaldata.stroke$age)
+
+par(mfrow=c(1,2)) # Plot matrix with 1 row and 2 columns:
+plot(finaldata.stroke.new$cigpday,
+     predict(stroke.linear,
+             type="risk",
+             newdata=finaldata.stroke.new),
+     main=expression(paste("Linear cig/day")),
+     log="y",
+     xlab="Cig/day",
+     ylab=expression(paste("exp(X*",hat(beta),")")))
+
+plot(finaldata.stroke.new$cigpday,
+     predict(stroke.rqs,
+             type="risk",
+             newdata=finaldata.stroke.new),
+     main=expression(paste("RQS cig/day")),
+     log="y",
+     xlab="Cig/day",
+     ylab=expression(paste("exp(X*",hat(beta),")")))
+
+par(mfrow=c(1,1)) # Reset plot matrix to 1 row/column
+
+#### Lr test
+anova(stroke.linear, stroke.rqs)
+
+#### Contrast
+k1 <- matrix(c(0, 20, 100, 0),1)
+exp(confint(glht(stroke.rqs, linfct=k1))$confint)[,1:3]
+
+k2 <- matrix(c(0, 20, 900, 100),1)
+exp(confint(glht(stroke.rqs, linfct=k2))$confint)[,1:3]
+
+@
+
+\section{\small{Question: \textit{Write out both Cox models that we estimated for the simple linear (Model 0) and restricted quadratic spline (Model 1) coded version of cigarettes per day in terms of the variables above, and general parameters (e.g. β coefficients). Hint: you may express the spline terms succintly and define them below the equation (see notes). (10 points)}}} 
+
+The equation for the log-hazard function for the age-adjusted model 0 with cigarettes per day included as a simple linear term is given by:
+\begin{eqnarray}
+ln(h(t|x)) = ln(h_{0}(t)) + \beta_{age} * age + \beta_{cigpday} * cigpday
+\label{eq:Model0}
+\end{eqnarray}
+
+\noindent where $h(t)$ is the hazard function, $h_{0}(t)$ is the baseline hazard (non specificied in the Cox model), $age$ is a continuous variable for age (in years) and $cigpday$ is a continuous variable for the number of cigarettes smoked per day. The coefficients of the models, $\beta_{i}$, are the log hazard ratio for a 1 unit increase in the covariate $i$, conditional on all the other covariates.\\
+
+\noindent The equation for the log-hazard function for the age-adjusted model 1 with cigarettes per day included as restricted quadratic splines term is given by:
+\begin{eqnarray}
+ln(h(t|x)) = ln(h_{0}(t)) + \beta_{age} * age + \beta_{1} * cigpday + \beta_{2} * (s_{20}^{2} - s_{60}^{2}) + \beta_{3} * (s_{40}^{2} - s_{60}^{2})
+\label{eq:Model1}
+\end{eqnarray}
+
+\noindent where $h(t)$ is the hazard function, $h_{0}(t)$ is the baseline hazard (non specificied in the Cox model), $age$ is a continuous variable for age (in years) and $\beta_{age}$ is the log hazard ratio for a 1 unit increase in $age$, conditional on cigpday. $cigpday$ is a continuous variable for the number of cigarettes smoked per day and $s_{20}$, $s_{40}$ and $s_{60}$ are the spline terms defined as follow:
+
+\[
+    s_{k} = 
+\begin{cases}
+    cigpday-k, & \text{if } cigpday > k\\
+    0, & \text{if } cigpday \leq k
+\end{cases}
+\]
+
+\noindent The coefficients of the models, $\beta_{1}$, $\beta_{2}$ and $\beta_{3}$ are harder to interpret but encode the quadratic (linear at tails) functions of cigpday fitted between boundaries of the categorization ($<$20 cigarettes/day; 20 - $<$40 cigarettes/day; 40 - $<$60 cigarettes/day; $\geq$ 60 cigarettes/day) and are useful to estimate the hazard ratio and 95$\%$ confidence interval to compare an index level to a reference level of cigarettes smoking (see question 3).
+
+
+\section{\small{Question: \textit{Consider the likelihood ratio test that compares that simple linear and restricted quadratic spline models. In words, describe what this is testing. Specifically in terms of the model parameters (i.e. β coefficients), what are the null and alternative hypotheses that are being tested (use formal notation)? What expression of cigarette smoking would you choose based on this test? (10 points)}}} 
+
+The linear model (model 0) is nested within the restricted quadratic splines model (model 1). A likelihood ratio test can therefore be used to test wether the additional parameters in model 1 are needed to describe the realtionship between stroke and cigarettes smoking. Formally, the null and alternative hypothesis of the likelihood ratio test are:
+
+\[
+    \begin{cases}
+    H_{0}: & Model_{0} = Model_{1}\\
+    H_{A}: & Model_{0} \neq Model_{1}
+\end{cases} \iff 
+\begin{cases}
+    H_{0}: & \beta_{2} = \beta_{3} = 0\\
+    H_{A}: & \beta_{2} \neq 0 \mbox{ or } \beta_{3} \neq 0
+\end{cases}
+\]
+
+\noindent Here is below the result from the likelihood ratio test comparing model 0 and model 1, via the anova command. As we can see, the test did not reach statistical significance at the 5$\%$ level and we therefore fail to reject the null hypothesis that model 0 and 1 are equal. Based on this test, we would therefore choose to model cigarettes smoking per day as a single linear term, just as in model 0.
+<<cache=TRUE>>=
+#### Lr test
+anova(stroke.linear, stroke.rqs)
+@
+
+\section{\small{Question: \textit{Using the results from the spline model, report the hazard ratios and 95$\%$ confidence intervals comparing: (10 points) }}}
+\subsection*{\small{\textit{a. 30 cigarettes per day vs. 10 cigarettes per day.}}}
+
+According to the equation (Eq \ref{eq:Model1}) of Model 1, the log-hazard of an individual smoking 30 cigarettes per day is given by:
+
+\begin{eqnarray*}
+g_{30} &=& ln(h(t|age, cigpday = 30))\\
+&=& ln(h_{0}(t)) + \beta_{age} * age + \beta_{1} * 30 + \beta_{2} * ((30-20)^{2})\\
+&=& ln(h_{0}(t)) + \beta_{age} * age + \beta_{1} * 30 + \beta_{2} * 100
+\label{eq:cigpday30}
+\end{eqnarray*}
+
+\noindent Similarly, the log-hazard of an individual smoking 10 cigarettes per day is given by:
+\begin{eqnarray*}
+g_{10} &=& ln(h(t|age, cigpday = 10))\\
+&=& ln(h_{0}(t)) + \beta_{age} * age + \beta_{1} * 10
+\label{eq:cigpday10}
+\end{eqnarray*}
+
+\noindent A simple substraction gives:
+\begin{eqnarray*}
+\Delta_{g1} = g_{30} - g_{10} &=& ln(h(t|age, cigpday = 30)) - ln(h(t|age, cigpday = 10))\\ &=& ln(\dfrac{h(t|age, cigpday = 30)}{h(t|age, cigpday = 10)})\\ &=& \beta_{1} * 30 + \beta_{2} * 100 - \beta_{1} * 10\\ &=& \beta_{1} * 20 + \beta_{2} * 100\\ &=& \beta_{age} * 0 + \beta_{1} * 20 + \beta_{2} * 100 + \beta_{3} * 0
+\label{eq:cigpday30_10}
+\end{eqnarray*}
+
+\noindent We can now calculate the contrast desired and the output below shows that individuals who smoke 30 cigarettes per day have \(\Sexpr{exp(confint(glht(stroke.rqs, linfct=k1))$confint)[,1]}\) (95$\%$ CI: [\(\Sexpr{exp(confint(glht(stroke.rqs, linfct=k1))$confint)[,2]}\); \(\Sexpr{exp(confint(glht(stroke.rqs, linfct=k1))$confint)[,3]}\)]) times the hazard of stroke than individuals who smoke 10 cigarettes per day, adjusting for age.
+
+<<cache=TRUE>>=
+k1 <- matrix(c(0, 20, 100, 0),1)
+exp(confint(glht(stroke.rqs, linfct=k1))$confint)[,1:3]
+@
+
+
+\subsection*{\small{\textit{b. 50 cigarettes per day vs. 10 cigarettes per day.}}}
+
+\noindent Similarly, the log-hazard of an individual smoking 50 cigarettes per day is given by:
+\begin{eqnarray*}
+g_{50} &=& ln(h(t|age, cigpday = 50))\\
+&=& ln(h_{0}(t)) + \beta_{age} * age + \beta_{1} * 50 + \beta_{2} * ((50-20)^{2}) + \beta_{3} * ((50-40)^{2})\\
+&=& ln(h_{0}(t)) + \beta_{age} * age + \beta_{1} * 50 + \beta_{2} * 900 + \beta_{3} * 100
+\label{eq:cigpday50}
+\end{eqnarray*}
+
+\noindent A simple substraction gives:
+\begin{eqnarray*}
+\Delta_{g2} = g_{50} - g_{10} &=& ln(h(t|age, cigpday = 50)) - ln(h(t|age, cigpday = 10))\\ &=& ln(\dfrac{h(t|age, cigpday = 50)}{h(t|age, cigpday = 10)})\\ &=& \beta_{1} * 50 + \beta_{2} * 900 + \beta_{3} * 100 - \beta_{1} * 10\\ &=& \beta_{1} * 20 + \beta_{2} * 900 + \beta_{3} * 100\\ &=& \beta_{age} * 0 + \beta_{1} * 20 + \beta_{2} * 900 + \beta_{3} * 100
+\label{eq:cigpday50_10}
+\end{eqnarray*}
+
+\noindent We can now calculate the contrast desired and the output below shows that individuals who smoke 50 cigarettes per day have \(\Sexpr{exp(confint(glht(stroke.rqs, linfct=k2))$confint)[,1]}\) (95$\%$ CI: [\(\Sexpr{exp(confint(glht(stroke.rqs, linfct=k2))$confint)[,2]}\); \(\Sexpr{exp(confint(glht(stroke.rqs, linfct=k2))$confint)[,3]}\)]) times the hazard of stroke than individuals who smoke 10 cigarettes per day, adjusting for age.
+
+<<cache=TRUE>>=
+k2 <- matrix(c(0, 20, 900, 100),1)
+exp(confint(glht(stroke.rqs, linfct=k2))$confint)[,1:3]
+@
+
+<<echo=FALSE>>=
+setwd("/Users/francoisrerolle/Desktop/UCSF/Courses/Winter 2018/PubHlth 250 C/HW/HW3")
+@
+
+\end{document}
